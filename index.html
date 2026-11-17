@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IT Coordinator Skills Assessment</title>
+<style>
+body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; background: #f6f6f9; color: #1c1b22; line-height: 1.5; }
+.wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 24px; margin: 0 0 4px; }
+h2 { font-size: 20px; margin: 0 0 8px; }
+.sub { color: #55535f; margin: 0 0 16px; }
+.card { background: #fff; border: 1px solid #dcdce4; border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+.nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 8px; }
+.tab { border: 1px solid #c9c9d6; background: #fff; border-radius: 8px; padding: 8px 12px; font: inherit; cursor: pointer; }
+.tab.on { background: #473bce; border-color: #473bce; color: #fff; }
+.timer { color: #55535f; font-size: 14px; margin-bottom: 12px; }
+.ticket { border-left: 4px solid #473bce; background: #f0efff; border-radius: 6px; padding: 12px 14px; margin: 12px 0; }
+.ticket .from { font-size: 13px; color: #55535f; margin-bottom: 4px; }
+.ticket p { margin: 4px 0; }
+.field { margin: 18px 0; }
+.field label, .field .lbl { display: block; font-weight: 600; margin-bottom: 2px; }
+.hint { font-size: 13px; color: #55535f; margin-bottom: 4px; }
+input[type=text], input[type=url], input[type=email], textarea, select { width: 100%; box-sizing: border-box; font: inherit; padding: 8px 10px; border: 1px solid #b9b9c9; border-radius: 6px; background: #fff; color: inherit; }
+textarea { min-height: 90px; resize: vertical; }
+.count { font-size: 12px; color: #6a6877; text-align: right; }
+.steprow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+@media (max-width: 600px) { .steprow { grid-template-columns: 1fr; } }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+button.primary { background: #473bce; color: #fff; border: 0; border-radius: 8px; padding: 10px 16px; font: inherit; cursor: pointer; }
+button.plain { background: #fff; color: inherit; border: 1px solid #c9c9d6; border-radius: 8px; padding: 10px 16px; font: inherit; cursor: pointer; }
+.msg { color: #b3261e; margin-top: 8px; min-height: 1.4em; }
+.ok { color: #1b6e3c; }
+ul.tight { margin: 8px 0 8px 20px; padding: 0; }
+.chatlog { border: 1px solid #dcdce4; border-radius: 8px; background: #fff; padding: 10px; min-height: 120px; max-height: 340px; overflow-y: auto; }
+.msg-u, .msg-a { margin: 6px 0; padding: 8px 10px; border-radius: 8px; max-width: 85%; white-space: pre-wrap; }
+.msg-u { background: #473bce; color: #fff; margin-left: auto; }
+.msg-a { background: #eceaf7; }
+.msg-n { color: #6a6877; font-size: 13px; font-style: italic; margin: 6px 0; }
+.chatbar { display: flex; gap: 8px; margin-top: 8px; align-items: flex-start; }
+.chatbar textarea { min-height: 44px; }
+.chatmeta { font-size: 13px; color: #55535f; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// Set CHAT_ENDPOINT to the deployed proxy URL to turn on the live chat in Scenario 1.
+// Leave it empty and Scenario 1 falls back to a plain text box.
+const CHAT_ENDPOINT = '';
+const CHAT_MAX_TURNS = 6;
+
+const TICKET_FIELDS = [
+  { id: 'status', label: 'Ticket status after your update', type: 'select', options: ['Open', 'Waiting on requester', 'Escalated', 'Resolved'] },
+  { id: 'reply', label: 'Your reply to the teammate', hint: 'Include what you found or decided, what happens next, and anything you need from them.', type: 'textarea', max: 600 },
+  { id: 'followup', label: 'Follow-up you would note on the ticket', hint: 'What gets checked or done later, and by when.', type: 'textarea', max: 300 }
+];
+
+const AI_FIELDS = [
+  { id: 'aiClaim', label: 'One thing an AI tool or search told you, and what it said', hint: 'If you did not use AI, pick one claim from any source you used.', type: 'textarea', max: 300 },
+  { id: 'aiSource', label: 'Link to the vendor documentation you checked it against', type: 'url' },
+  { id: 'aiResult', label: 'Result of your check', type: 'select', options: ['Confirmed', 'Corrected it', 'Could not verify'] }
+];
+
+const SCENARIOS = [
+  {
+    id: 's1',
+    title: 'Scenario 1: Account recovery',
+    minutes: 7,
+    setup: 'Your company uses 1Password Business, and you have administrative access.',
+    ticketFrom: 'Teammate, via Slack DM',
+    ticket: [
+      'Can someone help me with account recovery for our password manager?',
+      'I’m at the airport and can’t get on a call right now. Can you just start it?'
+    ],
+    fields: [
+      { id: 'firstAction', label: 'Your first action, before you reply to the teammate', hint: 'One sentence.', type: 'text', max: 200 },
+      { id: 'chat', label: 'Chat with the teammate', hint: 'Your teammate is played by an AI. Use up to 6 messages to ask what you need and say what you will do.', type: 'chat', maxTurns: 6 },
+      { id: 'steps', label: 'Recovery steps you would take once the request is cleared', hint: 'Up to 3 key steps. For each, link the vendor documentation page that supports it.', type: 'steps', count: 3 },
+      ...TICKET_FIELDS,
+      ...AI_FIELDS
+    ]
+  },
+  {
+    id: 's2',
+    title: 'Scenario 2: Troubleshooting a VPN connection',
+    minutes: 11,
+    setup: 'A teammate is using a Windows laptop. Circle uses Twingate VPN for secure network access.',
+    ticketFrom: 'Teammate, in the IT support channel',
+    ticket: [
+      'I can’t reconnect to Twingate. I had to troubleshoot my PC, and now it just loads and moves the toggle back to off. Help?'
+    ],
+    fields: [
+      { id: 'clarifying', label: 'Clarifying questions you would ask the teammate', type: 'textarea', max: 500 },
+      { id: 'steps', label: 'Troubleshooting steps you would take, in order', hint: 'Up to 3 key steps. For each, link the vendor documentation page that supports it.', type: 'steps', count: 3 },
+      { id: 'guideSymptoms', label: 'Internal guide, part 1: symptoms this applies to', type: 'textarea', max: 300 },
+      { id: 'guideResolution', label: 'Internal guide, part 2: steps to investigate or resolve', hint: 'Write it so another IT teammate could follow it without asking you anything.', type: 'textarea', max: 700 },
+      { id: 'guideEscalate', label: 'Internal guide, part 3: when to escalate', type: 'textarea', max: 300 },
+      ...TICKET_FIELDS,
+      ...AI_FIELDS
+    ]
+  },
+  {
+    id: 's3',
+    title: 'Scenario 3: Troubleshooting email delivery',
+    minutes: 8,
+    setup: 'Your company uses Google Workspace, and you have administrative access.',
+    ticketFrom: 'Teammate, in the IT support channel',
+    ticket: [
+      'Emails from an outside vendor to our team’s shared address, support@yourcompany.com, keep bouncing back. The bounce says the group may not exist or the sender may not have permission to post. Can you help?',
+      'Can you just set it so anyone can post to the group? That would be quicker.'
+    ],
+    fields: [
+      { id: 'firstAction', label: 'Your first action', hint: 'One sentence.', type: 'text', max: 200 },
+      { id: 'investigation', label: 'What would you look at, in order, and where in the admin tools?', type: 'textarea', max: 500 },
+      { id: 'steps', label: 'Settings or checks you would use', hint: 'Up to 3. For each, link the vendor documentation page that supports it.', type: 'steps', count: 3 },
+      { id: 'changeRequest', label: 'Your reply to the request to let anyone post', type: 'textarea', max: 500 },
+      { id: 'confirm', label: 'How you would confirm the issue is resolved', type: 'textarea', max: 300 },
+      ...TICKET_FIELDS,
+      ...AI_FIELDS
+    ]
+  }
+];
+
+
+(function () {
+  'use strict';
+  var STORE_KEY = 'circle-it-assessment-v1';
+  var state = { started: false, name: '', email: '', startedAt: null, submittedAt: null, current: 0, seconds: {}, answers: {} };
+  var SIDS = SCENARIOS.map(function (s) { return s.id; });
+  var app = document.getElementById('app');
+  var timerEl = null;
+  var tickCount = 0;
+
+  function load() {
+    try {
+      var raw = localStorage.getItem(STORE_KEY);
+      if (raw) {
+        var s = JSON.parse(raw);
+        if (s && s.v === 1 && s.state) { state = s.state; }
+      }
+    } catch (e) { }
+    state.answers = state.answers || {};
+    state.seconds = state.seconds || {};
+    SIDS.forEach(function (id) {
+      if (typeof state.seconds[id] !== 'number') { state.seconds[id] = 0; }
+      state.answers[id] = state.answers[id] || {};
+    });
+  }
+  function save() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify({ v: 1, state: state })); } catch (e) { }
+  }
+
+  function el(tag, props, kids) {
+    var n = document.createElement(tag);
+    if (props) {
+      Object.keys(props).forEach(function (k) {
+        var v = props[k];
+        if (k === 'class') { n.className = v; }
+        else if (k === 'text') { n.textContent = v; }
+        else if (k.slice(0, 2) === 'on') { n.addEventListener(k.slice(2), v); }
+        else { n.setAttribute(k, v); }
+      });
+    }
+    (kids || []).forEach(function (c) {
+      if (c === null || c === undefined) { return; }
+      n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    });
+    return n;
+  }
+
+  function totalSeconds() { return SIDS.reduce(function (a, id) { return a + state.seconds[id]; }, 0); }
+  function fmt(sec) { var m = Math.floor(sec / 60); var s = sec % 60; return m + ':' + (s < 10 ? '0' : '') + s; }
+  function slug(t) { return String(t || 'candidate').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'candidate'; }
+  function getA(sid, fid) { return state.answers[sid][fid]; }
+  function setA(sid, fid, v) { state.answers[sid][fid] = v; save(); }
+
+  function effField(f) {
+    if (f.type === 'chat' && !CHAT_ENDPOINT) {
+      return { id: f.id, label: 'Messages you would send the teammate, in order', hint: 'Write them as you would in Slack, up to 6 short messages. Include anything you would ask or say before taking any action.', type: 'textarea', max: 800 };
+    }
+    return f;
+  }
+
+  function isAnswered(f, v) {
+    if (f.type === 'chat') {
+      return !!(v && Array.isArray(v.messages) && v.messages.some(function (m) { return m.role === 'user' && !m.failed; }));
+    }
+    if (f.type === 'steps') {
+      return Array.isArray(v) && v.some(function (s) { return s && String(s.text || '').trim(); });
+    }
+    return !!(v && String(v).trim());
+  }
+  function countAnswered(s) {
+    var n = 0;
+    s.fields.forEach(function (f) { if (isAnswered(effField(f), getA(s.id, f.id))) { n += 1; } });
+    return n;
+  }
+
+  function render() {
+    app.textContent = '';
+    timerEl = null;
+    app.appendChild(state.started ? renderMain() : renderIntro());
+  }
+
+  function renderIntro() {
+    var wrap = el('div', { class: 'wrap' });
+    wrap.appendChild(el('h1', { text: 'IT Coordinator: Skills Assessment' }));
+    wrap.appendChild(el('p', { class: 'sub', text: 'Circle' }));
+    var card = el('div', { class: 'card' });
+    card.appendChild(el('p', { text: 'Thanks for taking the time to complete this skills assessment. At Circle, our IT team supports a globally distributed workforce, helping teammates access the tools they need, troubleshoot issues, and work securely and efficiently.' }));
+    card.appendChild(el('h2', { text: 'What to expect' }));
+    card.appendChild(el('p', { text: 'You will work through three short, hypothetical IT support tickets and answer each in the fields provided. Plan on about 25 minutes, and 30 at most. The timer on each page is for information only and is not a hard limit.' }));
+    var ul = el('ul', { class: 'tight' });
+    [
+      'You may use AI assistants (ChatGPT, Claude, Gemini, and so on), search engines, and vendor documentation.',
+      'Verify what you find. For key steps, link the vendor documentation page that supports the step. We will open the links.',
+      'Explain your judgment. If a request needs more information, approval, or escalation, say so.',
+      'Answers have character limits, so be concise.',
+      'Do not worry about being perfect. If you change your mind, say so in your answer.',
+      'You will not need access to any real systems. These scenarios are hypothetical.',
+      CHAT_ENDPOINT ? 'Scenario 1 includes a short chat with a simulated teammate. The teammate is played by an AI model. Your chat messages are sent to OpenAI to generate the replies, and the transcript is included in the file you submit.' : ''
+    ].filter(Boolean).forEach(function (t) { ul.appendChild(el('li', { text: t })); });
+    card.appendChild(ul);
+    card.appendChild(el('p', { text: 'Nothing is sent from this page. When you finish, you will download your responses and send the file to your Circle recruiter, or through the submission link you were given. Your progress is saved in this browser. After we review your submission, we will schedule a follow-up call to discuss your approach.' }));
+    wrap.appendChild(card);
+
+    var form = el('div', { class: 'card' });
+    var nameF = el('div', { class: 'field' });
+    nameF.appendChild(el('label', { for: 'cand-name', text: 'Your name' }));
+    var nameInp = el('input', { type: 'text', id: 'cand-name', maxlength: '120', autocomplete: 'name' });
+    nameInp.value = state.name || '';
+    nameF.appendChild(nameInp);
+    var emailF = el('div', { class: 'field' });
+    emailF.appendChild(el('label', { for: 'cand-email', text: 'Your email' }));
+    var emailInp = el('input', { type: 'email', id: 'cand-email', maxlength: '200', autocomplete: 'email' });
+    emailInp.value = state.email || '';
+    emailF.appendChild(emailInp);
+    var msg = el('div', { class: 'msg' });
+    var btn = el('button', {
+      class: 'primary', type: 'button', text: 'Begin assessment', onclick: function () {
+        var n = nameInp.value.trim();
+        if (!n) { msg.textContent = 'Please enter your name.'; return; }
+        state.name = n;
+        state.email = emailInp.value.trim();
+        state.started = true;
+        state.startedAt = new Date().toISOString();
+        state.current = 0;
+        save();
+        render();
+      }
+    });
+    form.appendChild(nameF);
+    form.appendChild(emailF);
+    form.appendChild(btn);
+    form.appendChild(msg);
+    wrap.appendChild(form);
+    return wrap;
+  }
+
+  function go(i) { state.current = i; save(); render(); window.scrollTo(0, 0); }
+
+  function updateTimer() {
+    if (!timerEl) { return; }
+    var t = totalSeconds();
+    var txt = 'Time on scenario pages: ' + fmt(t);
+    if (t >= 30 * 60) { txt += ' (over 30 minutes)'; }
+    timerEl.textContent = txt;
+  }
+
+  function renderMain() {
+    var wrap = el('div', { class: 'wrap' });
+    wrap.appendChild(el('h1', { text: 'IT Coordinator: Skills Assessment' }));
+    wrap.appendChild(el('p', { class: 'sub', text: state.name }));
+    var nav = el('div', { class: 'nav' });
+    SCENARIOS.forEach(function (s, i) {
+      nav.appendChild(el('button', { class: 'tab' + (state.current === i ? ' on' : ''), type: 'button', text: 'Scenario ' + (i + 1), onclick: function () { go(i); } }));
+    });
+    nav.appendChild(el('button', { class: 'tab' + (state.current === SCENARIOS.length ? ' on' : ''), type: 'button', text: 'Review and submit', onclick: function () { go(SCENARIOS.length); } }));
+    wrap.appendChild(nav);
+    timerEl = el('div', { class: 'timer' });
+    wrap.appendChild(timerEl);
+    updateTimer();
+    wrap.appendChild(state.current < SCENARIOS.length ? renderScenario(SCENARIOS[state.current], state.current) : renderReview());
+    return wrap;
+  }
+
+  function renderField(sid, f0) {
+    var f = effField(f0);
+    var id = sid + '-' + f.id;
+    var box = el('div', { class: 'field' });
+    if (f.type === 'steps' || f.type === 'chat') {
+      box.appendChild(el('div', { class: 'lbl', text: f.label }));
+    } else {
+      box.appendChild(el('label', { for: id, text: f.label }));
+    }
+    if (f.hint) { box.appendChild(el('div', { class: 'hint', text: f.hint })); }
+
+    if (f.type === 'text' || f.type === 'textarea') {
+      var inp = f.type === 'text'
+        ? el('input', { type: 'text', id: id, maxlength: String(f.max) })
+        : el('textarea', { id: id, maxlength: String(f.max) });
+      inp.value = getA(sid, f.id) || '';
+      var cnt = el('div', { class: 'count' });
+      var upd = function () { cnt.textContent = inp.value.length + ' / ' + f.max; };
+      inp.addEventListener('input', function () { setA(sid, f.id, inp.value); upd(); });
+      upd();
+      box.appendChild(inp);
+      box.appendChild(cnt);
+    } else if (f.type === 'select') {
+      var sel = el('select', { id: id });
+      sel.appendChild(el('option', { value: '', text: 'Choose one' }));
+      f.options.forEach(function (o) { sel.appendChild(el('option', { value: o, text: o })); });
+      sel.value = getA(sid, f.id) || '';
+      sel.addEventListener('change', function () { setA(sid, f.id, sel.value); });
+      box.appendChild(sel);
+    } else if (f.type === 'url') {
+      var u = el('input', { type: 'url', id: id, placeholder: 'https://', maxlength: '500' });
+      u.value = getA(sid, f.id) || '';
+      u.addEventListener('input', function () { setA(sid, f.id, u.value); });
+      box.appendChild(u);
+    } else if (f.type === 'chat') {
+      box.appendChild(renderChat(sid, f));
+    } else if (f.type === 'steps') {
+      var arr = getA(sid, f.id);
+      if (!Array.isArray(arr)) {
+        arr = [];
+        for (var i = 0; i < f.count; i += 1) { arr.push({ text: '', url: '' }); }
+        setA(sid, f.id, arr);
+      }
+      arr.forEach(function (item, idx) {
+        var row = el('div', { class: 'steprow' });
+        var t = el('input', { type: 'text', maxlength: '200', placeholder: 'Step ' + (idx + 1) + ': what you would do', 'aria-label': f.label + ', step ' + (idx + 1) + ' text' });
+        t.value = item.text || '';
+        t.addEventListener('input', function () { item.text = t.value; save(); });
+        var l = el('input', { type: 'url', maxlength: '500', placeholder: 'Vendor documentation link (https://)', 'aria-label': f.label + ', step ' + (idx + 1) + ' link' });
+        l.value = item.url || '';
+        l.addEventListener('input', function () { item.url = l.value; save(); });
+        row.appendChild(t);
+        row.appendChild(l);
+        box.appendChild(row);
+      });
+    }
+    return box;
+  }
+
+  var accessCode = '';
+  try { accessCode = sessionStorage.getItem('circle-it-chat-code') || ''; } catch (e) { }
+  var NOREPLY = 'No reply from the simulated teammate (connection problem). Your message was not counted. You can send it again or move on to the next fields.';
+
+  function renderChat(sid, f) {
+    var data = getA(sid, f.id);
+    if (!data || !Array.isArray(data.messages)) {
+      data = { messages: [], closed: false };
+      setA(sid, f.id, data);
+    }
+    var k;
+    for (k = 0; k < data.messages.length; k += 1) {
+      var m0 = data.messages[k];
+      if (m0.role === 'user' && !m0.failed) {
+        var nx = data.messages[k + 1];
+        if (!nx || nx.role !== 'assistant') { m0.failed = true; }
+      }
+    }
+    var maxTurns = f.maxTurns || CHAT_MAX_TURNS;
+    var busy = false;
+    var wrap = el('div');
+
+    var codeRow = el('div', { class: 'field' });
+    codeRow.appendChild(el('label', { for: 'chat-code', text: 'Access code' }));
+    codeRow.appendChild(el('div', { class: 'hint', text: 'Your recruiter sent you this code. It lets the chat connect.' }));
+    var codeInp = el('input', { type: 'text', id: 'chat-code', maxlength: '100', autocomplete: 'off' });
+    codeInp.value = accessCode;
+    codeInp.addEventListener('input', function () {
+      accessCode = codeInp.value.trim();
+      try { sessionStorage.setItem('circle-it-chat-code', accessCode); } catch (e) { }
+    });
+    codeRow.appendChild(codeInp);
+    wrap.appendChild(codeRow);
+
+    var log = el('div', { class: 'chatlog', role: 'log', 'aria-live': 'polite', 'aria-label': 'Chat with the simulated teammate' });
+    var meta = el('div', { class: 'chatmeta' });
+    var errMsg = el('div', { class: 'msg' });
+    var input = el('textarea', { id: sid + '-' + f.id + '-input', maxlength: '500', rows: '2', 'aria-label': 'Your message' });
+    var sendBtn = el('button', { class: 'primary', type: 'button', text: 'Send' });
+    var doneBtn = el('button', { class: 'plain', type: 'button', text: 'Done chatting' });
+
+    function used() {
+      return data.messages.filter(function (m) { return m.role === 'user' && !m.failed; }).length;
+    }
+    function paint() {
+      log.textContent = '';
+      if (!data.messages.length) {
+        log.appendChild(el('div', { class: 'msg-n', text: 'Nothing sent yet. Write your first message below.' }));
+      }
+      data.messages.forEach(function (m) {
+        var cls = m.role === 'user' ? 'msg-u' : (m.role === 'assistant' ? 'msg-a' : 'msg-n');
+        log.appendChild(el('div', { class: cls, text: m.content }));
+      });
+      log.scrollTop = log.scrollHeight;
+      var left = maxTurns - used();
+      var locked = data.closed || left <= 0;
+      meta.textContent = locked ? 'Chat closed.' : 'Messages left: ' + left + '. Replies are written by an AI that plays the teammate.';
+      input.disabled = locked || busy;
+      sendBtn.disabled = locked || busy;
+      doneBtn.disabled = locked || busy;
+    }
+    function historyWith(text) {
+      var out = [];
+      data.messages.forEach(function (m) {
+        if (!m.failed && (m.role === 'user' || m.role === 'assistant')) { out.push({ role: m.role, content: m.content }); }
+      });
+      out.push({ role: 'user', content: text });
+      return out;
+    }
+    function send() {
+      if (busy || data.closed) { return; }
+      var text = input.value.trim();
+      errMsg.textContent = '';
+      if (!text) { return; }
+      if (!accessCode) { errMsg.textContent = 'Enter the access code first.'; return; }
+      if (used() >= maxTurns) { return; }
+      var hist = historyWith(text);
+      var userMsg = { role: 'user', content: text, ts: new Date().toISOString() };
+      data.messages.push(userMsg);
+      input.value = '';
+      busy = true;
+      save();
+      paint();
+      var fail = function (note) {
+        userMsg.failed = true;
+        data.messages.push({ role: 'note', content: note, ts: new Date().toISOString() });
+        busy = false;
+        save();
+        paint();
+      };
+      var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+      var timer = setTimeout(function () { if (ctl) { ctl.abort(); } }, 30000);
+      fetch(CHAT_ENDPOINT, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-assessment-code': accessCode },
+        body: JSON.stringify({ messages: hist }),
+        signal: ctl ? ctl.signal : undefined
+      }).then(function (res) {
+        clearTimeout(timer);
+        if (res.status === 401) { fail('The access code was not accepted. Check it and send your message again.'); return null; }
+        if (!res.ok) { fail(NOREPLY); return null; }
+        return res.json();
+      }).then(function (j) {
+        if (j === null || j === undefined) { return; }
+        var reply = typeof j.reply === 'string' ? j.reply.trim() : '';
+        if (!reply) { fail(NOREPLY); return; }
+        data.messages.push({ role: 'assistant', content: reply, ts: new Date().toISOString() });
+        if (used() >= maxTurns) { data.closed = true; }
+        busy = false;
+        save();
+        paint();
+      }).catch(function () {
+        clearTimeout(timer);
+        if (busy) { fail(NOREPLY); }
+      });
+    }
+    sendBtn.addEventListener('click', send);
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    });
+    doneBtn.addEventListener('click', function () {
+      if (busy) { return; }
+      data.closed = true;
+      save();
+      paint();
+    });
+
+    wrap.appendChild(log);
+    var bar = el('div', { class: 'chatbar' });
+    bar.appendChild(input);
+    bar.appendChild(sendBtn);
+    wrap.appendChild(bar);
+    var row = el('div', { class: 'btns' });
+    row.appendChild(doneBtn);
+    wrap.appendChild(row);
+    wrap.appendChild(meta);
+    wrap.appendChild(errMsg);
+    paint();
+    return wrap;
+  }
+
+  function renderScenario(s, idx) {
+    var card = el('div', { class: 'card' });
+    card.appendChild(el('h2', { text: s.title }));
+    card.appendChild(el('div', { class: 'hint', text: 'Suggested time: about ' + s.minutes + ' minutes' }));
+    card.appendChild(el('p', { text: s.setup }));
+    var t = el('div', { class: 'ticket' });
+    t.appendChild(el('div', { class: 'from', text: s.ticketFrom }));
+    s.ticket.forEach(function (line) { t.appendChild(el('p', { text: line })); });
+    card.appendChild(t);
+    if (s.followupTicket) {
+      var t2 = el('div', { class: 'ticket' });
+      t2.appendChild(el('div', { class: 'from', text: s.followupTicket.from }));
+      t2.appendChild(el('p', { text: s.followupTicket.body }));
+      card.appendChild(t2);
+    }
+    s.fields.forEach(function (f) { card.appendChild(renderField(s.id, f)); });
+    var btns = el('div', { class: 'btns' });
+    if (idx > 0) { btns.appendChild(el('button', { class: 'plain', type: 'button', text: 'Back', onclick: function () { go(idx - 1); } })); }
+    btns.appendChild(el('button', { class: 'primary', type: 'button', text: idx === SCENARIOS.length - 1 ? 'Review and submit' : 'Next scenario', onclick: function () { go(idx + 1); } }));
+    card.appendChild(btns);
+    return card;
+  }
+
+  function buildPayload() {
+    var out = {
+      format: 'circle-it-assessment',
+      version: 1,
+      candidate: { name: state.name, email: state.email },
+      startedAt: state.startedAt,
+      submittedAt: state.submittedAt,
+      activeSeconds: { total: totalSeconds() },
+      scenarios: {}
+    };
+    SCENARIOS.forEach(function (s) {
+      out.activeSeconds[s.id] = state.seconds[s.id];
+      out.scenarios[s.id] = {
+        title: s.title,
+        suggestedMinutes: s.minutes,
+        fields: s.fields.map(function (f) {
+          var ef = effField(f);
+          var v = getA(s.id, f.id);
+          if (ef.type === 'chat') { v = v && Array.isArray(v.messages) ? v : { messages: [], closed: false }; }
+          return { id: f.id, label: ef.label, type: ef.type, value: v === undefined ? '' : v };
+        })
+      };
+    });
+    return out;
+  }
+
+  function download() {
+    state.submittedAt = new Date().toISOString();
+    save();
+    var blob = new Blob([JSON.stringify(buildPayload(), null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'it-assessment-' + slug(state.name) + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function renderReview() {
+    var card = el('div', { class: 'card' });
+    card.appendChild(el('h2', { text: 'Review and submit' }));
+    var ul = el('ul', { class: 'tight' });
+    SCENARIOS.forEach(function (s) {
+      ul.appendChild(el('li', { text: s.title + ': ' + countAnswered(s) + ' of ' + s.fields.length + ' fields answered' }));
+    });
+    card.appendChild(ul);
+    card.appendChild(el('p', { text: 'You can go back to any scenario to finish or change an answer. Nothing is sent from this page. Download your responses, then send the file to your Circle recruiter, or through the submission link you were given.' }));
+    var msg = el('div', { class: 'msg ok' });
+    var btns = el('div', { class: 'btns' });
+    btns.appendChild(el('button', { class: 'primary', type: 'button', text: 'Download my responses', onclick: function () { download(); msg.textContent = 'Downloaded. Send that file to your recruiter.'; } }));
+    btns.appendChild(el('button', {
+      class: 'plain', type: 'button', text: 'Copy responses to clipboard', onclick: function () {
+        state.submittedAt = new Date().toISOString();
+        save();
+        var text = JSON.stringify(buildPayload(), null, 2);
+        try {
+          navigator.clipboard.writeText(text).then(function () { msg.textContent = 'Copied.'; }, function () { msg.textContent = 'Copy failed. Use the download button instead.'; });
+        } catch (e) { msg.textContent = 'Copy failed. Use the download button instead.'; }
+      }
+    }));
+    card.appendChild(btns);
+    card.appendChild(msg);
+    return card;
+  }
+
+  function tick() {
+    if (!state.started || state.current >= SCENARIOS.length) { return; }
+    if (document.visibilityState !== 'visible') { return; }
+    state.seconds[SCENARIOS[state.current].id] += 1;
+    tickCount += 1;
+    if (tickCount % 5 === 0) { save(); }
+    updateTimer();
+  }
+
+  load();
+  render();
+  setInterval(tick, 1000);
+  window.__assessment = { buildPayload: buildPayload, state: function () { return state; } };
+}());
+</script>
+</body>
+</html>
