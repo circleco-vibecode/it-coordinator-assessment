@@ -50,6 +50,11 @@ ul.tight { margin: 8px 0 8px 20px; padding: 0; }
 const CHAT_ENDPOINT = '';
 const CHAT_MAX_TURNS = 6;
 
+// Set SUBMIT_URL to the Apps Script web app URL (ends in /exec) to send responses straight to the Sheet.
+// Leave it empty and candidates download a file instead.
+const SUBMIT_URL = 'https://script.google.com/macros/s/AKfycbx0eIqiu2gvRmxkLJec1pC9TmshXpaMGklYf_VnM_5cUCSNxhVY72iDaWW2__DvF964/exec';
+const SUBMIT_MAX_CHARS = 45000;
+
 const TICKET_FIELDS = [
   { id: 'status', label: 'Ticket status after your update', type: 'select', options: ['Open', 'Waiting on requester', 'Escalated', 'Resolved'] },
   { id: 'reply', label: 'Your reply to the teammate', hint: 'Include what you found or decided, what happens next, and anything you need from them.', type: 'textarea', max: 600 },
@@ -126,7 +131,7 @@ const SCENARIOS = [
 (function () {
   'use strict';
   var STORE_KEY = 'circle-it-assessment-v1';
-  var state = { started: false, name: '', email: '', startedAt: null, submittedAt: null, current: 0, seconds: {}, answers: {} };
+  var state = { started: false, name: '', email: '', startedAt: null, submittedAt: null, submissionId: null, received: false, current: 0, seconds: {}, answers: {} };
   var SIDS = SCENARIOS.map(function (s) { return s.id; });
   var app = document.getElementById('app');
   var timerEl = null;
@@ -142,6 +147,7 @@ const SCENARIOS = [
     } catch (e) { }
     state.answers = state.answers || {};
     state.seconds = state.seconds || {};
+    if (typeof state.submissionId !== 'string' || !state.submissionId) { state.submissionId = newId(); }
     SIDS.forEach(function (id) {
       if (typeof state.seconds[id] !== 'number') { state.seconds[id] = 0; }
       state.answers[id] = state.answers[id] || {};
@@ -200,7 +206,7 @@ const SCENARIOS = [
   function render() {
     app.textContent = '';
     timerEl = null;
-    app.appendChild(state.started ? renderMain() : renderIntro());
+    app.appendChild(state.received ? renderDone() : (state.started ? renderMain() : renderIntro()));
   }
 
   function renderIntro() {
@@ -222,7 +228,9 @@ const SCENARIOS = [
       CHAT_ENDPOINT ? 'Scenario 1 includes a short chat with a simulated teammate. The teammate is played by an AI model. Your chat messages are sent to OpenAI to generate the replies, and the transcript is included in the file you submit.' : ''
     ].filter(Boolean).forEach(function (t) { ul.appendChild(el('li', { text: t })); });
     card.appendChild(ul);
-    card.appendChild(el('p', { text: 'Nothing is sent from this page. When you finish, you will download your responses and send the file to your Circle recruiter, or through the submission link you were given. Your progress is saved in this browser. After we review your submission, we will schedule a follow-up call to discuss your approach.' }));
+    card.appendChild(el('p', { text: SUBMIT_URL
+      ? 'When you finish, you will submit your responses from the last page, and they go straight to the Circle hiring team. Your progress is saved in this browser until then. After we review your submission, we will schedule a follow-up call to discuss your approach.'
+      : 'Nothing is sent from this page. When you finish, you will download your responses and send the file to your Circle recruiter, or through the submission link you were given. Your progress is saved in this browser. After we review your submission, we will schedule a follow-up call to discuss your approach.' }));
     wrap.appendChild(card);
 
     var form = el('div', { class: 'card' });
@@ -512,6 +520,7 @@ const SCENARIOS = [
     var out = {
       format: 'circle-it-assessment',
       version: 1,
+      submissionId: state.submissionId,
       candidate: { name: state.name, email: state.email },
       startedAt: state.startedAt,
       submittedAt: state.submittedAt,
@@ -548,6 +557,79 @@ const SCENARIOS = [
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
 
+  function newId() {
+    try { if (window.crypto && typeof window.crypto.randomUUID === 'function') { return window.crypto.randomUUID(); } } catch (e) { }
+    var b = new Uint8Array(16);
+    window.crypto.getRandomValues(b);
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    var h = Array.prototype.map.call(b, function (x) { return (x < 16 ? '0' : '') + x.toString(16); }).join('');
+    return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+  }
+
+  function checkReceived(id, cb) {
+    var name = '__circleCheck' + Math.floor(Math.random() * 1e9);
+    var s = document.createElement('script');
+    var done = false;
+    var timer = null;
+    var finish = function (ok) {
+      if (done) { return; }
+      done = true;
+      clearTimeout(timer);
+      window[name] = function () { };
+      if (s.parentNode) { s.parentNode.removeChild(s); }
+      cb(ok);
+    };
+    window[name] = function (r) { finish(!!(r && r.received === true)); };
+    s.onerror = function () { finish(false); };
+    timer = setTimeout(function () { finish(false); }, 15000);
+    s.src = SUBMIT_URL + (SUBMIT_URL.indexOf('?') >= 0 ? '&' : '?') + 'id=' + encodeURIComponent(id) + '&callback=' + name;
+    document.head.appendChild(s);
+  }
+
+  function submitResponses(msg, buttons) {
+    state.submittedAt = new Date().toISOString();
+    save();
+    var body = JSON.stringify(buildPayload());
+    var setBusy = function (b) { buttons.forEach(function (x) { x.disabled = b; }); };
+    var failMsg = function (t) { msg.className = 'msg'; msg.textContent = t; setBusy(false); };
+    if (body.length > SUBMIT_MAX_CHARS) {
+      failMsg('Your responses are too long to submit here. Download your responses and send the file to your Circle recruiter.');
+      return;
+    }
+    setBusy(true);
+    msg.className = 'msg ok';
+    msg.textContent = 'Submitting...';
+    var attempts = 0;
+    var check = function () {
+      attempts += 1;
+      checkReceived(state.submissionId, function (ok) {
+        if (ok) {
+          state.received = true;
+          state.current = SCENARIOS.length;
+          save();
+          render();
+          window.scrollTo(0, 0);
+          return;
+        }
+        if (attempts < 4) { setTimeout(check, 2000 * attempts); return; }
+        failMsg('We could not confirm your submission. Try again, or download your responses and send the file to your Circle recruiter.');
+      });
+    };
+    fetch(SUBMIT_URL, { method: 'POST', mode: 'no-cors', headers: { 'content-type': 'text/plain;charset=utf-8' }, body: body })
+      .then(function () { check(); }, function () { check(); });
+  }
+
+  function renderDone() {
+    var wrap = el('div', { class: 'wrap' });
+    wrap.appendChild(el('h1', { text: 'IT Coordinator: Skills Assessment' }));
+    var card = el('div', { class: 'card' });
+    card.appendChild(el('h2', { text: 'Your responses were received' }));
+    card.appendChild(el('p', { text: 'Thanks, ' + state.name + '. The Circle hiring team has your submission, and we will be in touch about next steps. You can close this page.' }));
+    wrap.appendChild(card);
+    return wrap;
+  }
+
   function renderReview() {
     var card = el('div', { class: 'card' });
     card.appendChild(el('h2', { text: 'Review and submit' }));
@@ -556,10 +638,20 @@ const SCENARIOS = [
       ul.appendChild(el('li', { text: s.title + ': ' + countAnswered(s) + ' of ' + s.fields.length + ' fields answered' }));
     });
     card.appendChild(ul);
-    card.appendChild(el('p', { text: 'You can go back to any scenario to finish or change an answer. Nothing is sent from this page. Download your responses, then send the file to your Circle recruiter, or through the submission link you were given.' }));
+    card.appendChild(el('p', { text: SUBMIT_URL
+      ? 'You can go back to any scenario to finish or change an answer. When you are ready, submit your responses. You cannot change them after submitting.'
+      : 'You can go back to any scenario to finish or change an answer. Nothing is sent from this page. Download your responses, then send the file to your Circle recruiter, or through the submission link you were given.' }));
     var msg = el('div', { class: 'msg ok' });
     var btns = el('div', { class: 'btns' });
-    btns.appendChild(el('button', { class: 'primary', type: 'button', text: 'Download my responses', onclick: function () { download(); msg.textContent = 'Downloaded. Send that file to your recruiter.'; } }));
+    var actionButtons = [];
+    if (SUBMIT_URL) {
+      var sb = el('button', { class: 'primary', type: 'button', text: 'Submit my responses', onclick: function () { submitResponses(msg, actionButtons); } });
+      actionButtons.push(sb);
+      btns.appendChild(sb);
+    }
+    var db = el('button', { class: SUBMIT_URL ? 'plain' : 'primary', type: 'button', text: 'Download my responses', onclick: function () { download(); msg.className = 'msg ok'; msg.textContent = SUBMIT_URL ? 'Downloaded. If submitting does not work, send that file to your recruiter.' : 'Downloaded. Send that file to your recruiter.'; } });
+    actionButtons.push(db);
+    btns.appendChild(db);
     btns.appendChild(el('button', {
       class: 'plain', type: 'button', text: 'Copy responses to clipboard', onclick: function () {
         state.submittedAt = new Date().toISOString();
