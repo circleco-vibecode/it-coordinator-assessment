@@ -16,6 +16,8 @@ h2 { font-size: 20px; margin: 0 0 8px; }
 .tab.on { background: #473bce; border-color: #473bce; color: #fff; }
 .timer { color: #55535f; font-size: 14px; margin-bottom: 12px; }
 .ticket { border-left: 4px solid #473bce; background: #f0efff; border-radius: 6px; padding: 12px 14px; margin: 12px 0; }
+.rec { background: #fff4d6; border: 1px solid #e0b84a; border-left: 4px solid #b7791f; border-radius: 8px; padding: 10px 14px; margin: 12px 0; color: #3d2f00; }
+.rec strong { font-weight: 700; }
 .ticket .from { font-size: 13px; color: #55535f; margin-bottom: 4px; }
 .ticket p { margin: 4px 0; }
 .field { margin: 18px 0; }
@@ -209,10 +211,10 @@ const SCENARIOS = [
     app.appendChild(state.received ? renderDone() : (state.started ? renderMain() : renderIntro()));
   }
 
-  function renderIntro() {
+  function recBanner(full) { var d = el('div', { class: 'rec', role: 'note' }); d.appendChild(el('strong', { text: 'Please record your screen. ' })); d.appendChild(document.createTextNode(full ? 'Start a screen recording before you click Begin assessment, and keep it running until you submit. Your Circle recruiter will tell you how to share it.' : 'Keep your screen recording running until you submit.')); return d; }  function renderIntro() {
     var wrap = el('div', { class: 'wrap' });
     wrap.appendChild(el('h1', { text: 'IT Coordinator: Skills Assessment' }));
-    wrap.appendChild(el('p', { class: 'sub', text: 'Circle' }));
+    wrap.appendChild(el('p', { class: 'sub', text: 'Circle' })); wrap.appendChild(recBanner(true));
     var card = el('div', { class: 'card' });
     card.appendChild(el('p', { text: 'Thanks for taking the time to complete this skills assessment. At Circle, our IT team supports a globally distributed workforce, helping teammates access the tools they need, troubleshoot issues, and work securely and efficiently.' }));
     card.appendChild(el('h2', { text: 'What to expect' }));
@@ -279,7 +281,7 @@ const SCENARIOS = [
   function renderMain() {
     var wrap = el('div', { class: 'wrap' });
     wrap.appendChild(el('h1', { text: 'IT Coordinator: Skills Assessment' }));
-    wrap.appendChild(el('p', { class: 'sub', text: state.name }));
+    wrap.appendChild(el('p', { class: 'sub', text: state.name })); wrap.appendChild(recBanner(false));
     var nav = el('div', { class: 'nav' });
     SCENARIOS.forEach(function (s, i) {
       nav.appendChild(el('button', { class: 'tab' + (state.current === i ? ' on' : ''), type: 'button', text: 'Scenario ' + (i + 1), onclick: function () { go(i); } }));
