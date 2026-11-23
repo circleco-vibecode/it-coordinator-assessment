@@ -211,7 +211,7 @@ const SCENARIOS = [
     app.appendChild(state.received ? renderDone() : (state.started ? renderMain() : renderIntro()));
   }
 
-  function recBanner(full) { var d = el('div', { class: 'rec', role: 'note' }); d.appendChild(el('strong', { text: 'Please record your screen. ' })); d.appendChild(document.createTextNode(full ? 'Start a screen recording before you click Begin assessment, and keep it running until you submit. Your Circle recruiter will tell you how to share it.' : 'Keep your screen recording running until you submit.')); return d; }  function renderIntro() {
+  function recBanner(full) { var d = el('div', { class: 'rec', role: 'note' }); d.appendChild(el('strong', { text: 'Please record your screen. ' })); d.appendChild(document.createTextNode(full ? 'Start a screen recording before you click Begin assessment, and keep it running until you submit. Then upload it to a service such as Loom or Google Drive and paste the link on the last page.' : 'Keep your screen recording running until you submit.')); return d; }  function renderIntro() {
     var wrap = el('div', { class: 'wrap' });
     wrap.appendChild(el('h1', { text: 'IT Coordinator: Skills Assessment' }));
     wrap.appendChild(el('p', { class: 'sub', text: 'Circle' })); wrap.appendChild(recBanner(true));
@@ -523,7 +523,7 @@ const SCENARIOS = [
       format: 'circle-it-assessment',
       version: 1,
       submissionId: state.submissionId,
-      candidate: { name: state.name, email: state.email },
+      candidate: { name: state.name, email: state.email }, recordingUrl: state.recordingUrl || '',
       startedAt: state.startedAt,
       submittedAt: state.submittedAt,
       activeSeconds: { total: totalSeconds() },
@@ -643,11 +643,11 @@ const SCENARIOS = [
     card.appendChild(el('p', { text: SUBMIT_URL
       ? 'You can go back to any scenario to finish or change an answer. When you are ready, submit your responses. You cannot change them after submitting.'
       : 'You can go back to any scenario to finish or change an answer. Nothing is sent from this page. Download your responses, then send the file to your Circle recruiter, or through the submission link you were given.' }));
-    var msg = el('div', { class: 'msg ok' });
+    var recF = el('div', { class: 'field' }); recF.appendChild(el('label', { for: 'rec-url', text: 'Link to your screen recording' })); recF.appendChild(el('div', { class: 'hint', text: 'Upload your recording to a service such as Loom, Google Drive, or YouTube (unlisted). Make sure anyone with the link can view it, and do not change or delete it after you submit.' })); var recInp = el('input', { type: 'url', id: 'rec-url', maxlength: '500', placeholder: 'https://' }); recInp.value = state.recordingUrl || ''; recInp.addEventListener('input', function () { state.recordingUrl = recInp.value.trim(); save(); }); recF.appendChild(recInp); card.appendChild(recF); var msg = el('div', { class: 'msg ok' });
     var btns = el('div', { class: 'btns' });
     var actionButtons = [];
     if (SUBMIT_URL) {
-      var sb = el('button', { class: 'primary', type: 'button', text: 'Submit my responses', onclick: function () { submitResponses(msg, actionButtons); } });
+      var sb = el('button', { class: 'primary', type: 'button', text: 'Submit my responses', onclick: function () { var okRu = false; try { okRu = new URL((state.recordingUrl || '').trim()).protocol === 'https:'; } catch (e) { } if (!okRu) { msg.className = 'msg'; msg.textContent = 'Please add a link (starting with https://) to your screen recording before you submit.'; return; } submitResponses(msg, actionButtons); } });
       actionButtons.push(sb);
       btns.appendChild(sb);
     }
